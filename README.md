@@ -13,7 +13,31 @@ Claude Code → Middleware (8318) → CLIProxyAPI (8317) → Antigravity → Goo
 - **MCP server support** - middleware normalizes JSON schemas for Gemini compatibility
 - **Works with any Claude Code version** - automatic model name translation
 
-## Quick Start
+## Quick Start (One Command)
+
+```bash
+git clone https://github.com/user/CLIProxyAPI.git ~/Dev/CLIProxyAPI
+cd ~/Dev/CLIProxyAPI
+./setup.sh
+```
+
+The setup script will:
+1. Install CLIProxyAPI (via Homebrew)
+2. Build the middleware (requires Go 1.21+)
+3. Generate an API key
+4. Create config files
+5. Add shell configuration to your terminal
+6. Prompt you to login to Antigravity
+
+### Requirements
+
+- **macOS** (Linux should work but untested)
+- **Homebrew** - for installing CLIProxyAPI
+- **Go 1.21+** - for building middleware (optional but recommended for MCP support)
+
+## Manual Setup
+
+If you prefer to set up manually:
 
 ### 1. Install CLIProxyAPI
 
@@ -21,24 +45,29 @@ Claude Code → Middleware (8318) → CLIProxyAPI (8317) → Antigravity → Goo
 brew install router-for-me/tap/cliproxyapi
 ```
 
-### 2. Clone This Repo
+### 2. Create Config Files
 
 ```bash
-git clone https://github.com/user/CLIProxyAPI-setup.git ~/Dev/CLIProxyAPI
-cd ~/Dev/CLIProxyAPI
+cp config.example.yaml config.yaml
+cp .env.example .env
+
+# Generate API key
+API_KEY=$(openssl rand -hex 24 | sed 's/^/sk-/')
+echo "CLIPROXY_API_KEY=\"$API_KEY\"" > .env
+
+# Update config.yaml with your key
+sed -i '' "s/sk-your-api-key-here/$API_KEY/" config.yaml
 ```
 
-### 3. Generate Your API Key
+### 3. Build Middleware (Optional)
 
 ```bash
-# Generate a random API key
-openssl rand -hex 24 | sed 's/^/sk-/'
-# Example output: sk-a1b2c3d4e5f6...
-
-# Edit config.yaml and replace "sk-your-api-key-here" with your generated key
+cd middleware
+go build -o cliproxy-middleware .
+cd ..
 ```
 
-### 4. Add Your Shell Config
+### 4. Add Shell Config
 
 Add to `~/.zshrc` or `~/.bashrc`:
 
@@ -47,25 +76,13 @@ Add to `~/.zshrc` or `~/.bashrc`:
 source "$HOME/Dev/CLIProxyAPI/anticc.sh"
 ```
 
-Then reload:
+### 5. Login & Start
 
 ```bash
 source ~/.zshrc
-```
-
-### 5. Login to Antigravity
-
-```bash
-anticc-login
-```
-
-This opens a browser for Google OAuth. Add multiple accounts for higher rate limits.
-
-### 6. Start & Use
-
-```bash
-anticc-up      # Start the proxy + middleware
-claude         # Use Claude Code normally
+anticc-login   # Opens browser for Google OAuth
+anticc-up      # Start the proxy
+claude         # Use Claude Code
 ```
 
 ## Available Commands
