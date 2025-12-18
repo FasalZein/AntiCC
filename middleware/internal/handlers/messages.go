@@ -15,6 +15,10 @@ import (
 // Messages intercepts /v1/messages to normalize tool schemas for Gemini compatibility
 func Messages(cfg *config.Config, proxy *httputil.ReverseProxy) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if cfg.Debug {
+			log.Printf("[messages] received %s %s", r.Method, r.URL.Path)
+		}
+
 		if r.Method != http.MethodPost {
 			serveProxy(w, r, proxy)
 			return
@@ -38,6 +42,16 @@ func Messages(cfg *config.Config, proxy *httputil.ReverseProxy) http.HandlerFunc
 
 		// Check if there are tools to normalize
 		toolsRaw, hasTools := rawRequest["tools"]
+		if cfg.Debug {
+			keys := make([]string, 0, len(rawRequest))
+			for k := range rawRequest {
+				keys = append(keys, k)
+			}
+			log.Printf("[messages] request keys: %v, hasTools: %v", keys, hasTools)
+			if hasTools {
+				log.Printf("[messages] tools length: %d bytes", len(toolsRaw))
+			}
+		}
 		if !hasTools || len(toolsRaw) == 0 || string(toolsRaw) == "null" {
 			r.Body = io.NopCloser(bytes.NewReader(body))
 			r.ContentLength = int64(len(body))
