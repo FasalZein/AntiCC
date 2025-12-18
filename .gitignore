@@ -1,0 +1,26 @@
+# Upstream CLIProxyAPI source (cloned for reference)
+upstream-source/
+
+# IDE and editor
+.claude/
+.vscode/
+
+# Logs
+logs/
+
+# Go binaries
+middleware/cliproxy-middleware
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Go test binary
+*.test
+
+# Go coverage
+*.out
+
+# macOS
+.DS_Store
