@@ -16,8 +16,8 @@ Claude Code → Middleware (8318) → CLIProxyAPI (8317) → Antigravity → Goo
 ## Quick Start (One Command)
 
 ```bash
-git clone https://github.com/user/CLIProxyAPI.git ~/Dev/CLIProxyAPI
-cd ~/Dev/CLIProxyAPI
+git clone https://github.com/FasalZein/AntiCC.git ~/Dev/AntiCC
+cd ~/Dev/AntiCC
 ./setup.sh
 ```
 
