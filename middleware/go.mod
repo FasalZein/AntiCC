@@ -1,3 +1,3 @@
-module github.com/tothemoon/cliproxy-middleware
+module cliproxy-middleware
 
 go 1.25.5
