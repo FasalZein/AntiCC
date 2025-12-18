@@ -1,0 +1,132 @@
+# CLIProxyAPI Configuration for Antigravity
+#
+# This config is optimized for using Claude Code with Antigravity models.
+# Antigravity provides access to Claude, Gemini, and GPT models via Google OAuth.
+#
+# Quick Start:
+#   1. Install: brew install router-for-me/tap/cliproxyapi
+#   2. Login:   CLIProxyAPI --antigravity-login
+#   3. Run:     CLIProxyAPI --config config.yaml
+#   4. Use:     Set ANTHROPIC_BASE_URL=http://127.0.0.1:8317
+
+# =============================================================================
+# SERVER SETTINGS
+# =============================================================================
+
+# Port for the proxy server
+port: 8317
+
+# Bind to localhost only (recommended for security)
+host: "127.0.0.1"
+
+# Enable debug logging (set to true for troubleshooting)
+debug: false
+
+# Write logs to files in ./logs/ directory
+logging-to-file: true
+
+# =============================================================================
+# AUTHENTICATION
+# =============================================================================
+
+# Directory for storing OAuth tokens
+# Tokens are saved as: ~/.cli-proxy-api/antigravity-<email>.json
+auth-dir: "~/.cli-proxy-api"
+
+# API keys for client authentication
+# Generate your own: openssl rand -hex 24 | sed 's/^/sk-/'
+api-keys:
+  - "sk-your-api-key-here"
+
+# =============================================================================
+# REQUEST HANDLING
+# =============================================================================
+
+# Retry failed requests (handles rate limits and temporary errors)
+request-retry: 3
+
+# Maximum wait time for rate-limited credentials before retry (seconds)
+max-retry-interval: 30
+
+# Automatically switch when quota exceeded
+quota-exceeded:
+  switch-project: true        # Try another account
+  switch-preview-model: true  # Try preview model variant
+
+# =============================================================================
+# MODEL MAPPINGS (Optional)
+# =============================================================================
+# Map Claude Code's internal model names to Antigravity equivalents.
+# This ensures compatibility when Claude Code requests specific model versions.
+#
+# Enable this section if you want automatic model translation:
+
+# ampcode:
+#   force-model-mappings: true
+#   model-mappings:
+#     # Claude Opus models -> Antigravity Claude Opus (thinking)
+#     - from: claude-opus-4-5-20251101
+#       to: gemini-claude-opus-4-5-thinking
+#     - from: claude-opus-4-5
+#       to: gemini-claude-opus-4-5-thinking
+#
+#     # Claude Sonnet models -> Antigravity Claude Sonnet (thinking)
+#     - from: claude-sonnet-4-5-20250929
+#       to: gemini-claude-sonnet-4-5-thinking
+#     - from: claude-sonnet-4-5
+#       to: gemini-claude-sonnet-4-5-thinking
+#
+#     # Claude Haiku models -> Antigravity Claude Sonnet (faster)
+#     - from: claude-haiku-4-5-20251001
+#       to: gemini-claude-sonnet-4-5
+#     - from: claude-3-5-haiku-20241022
+#       to: gemini-claude-sonnet-4-5
+
+# =============================================================================
+# REMOTE MANAGEMENT (Optional)
+# =============================================================================
+# Web-based control panel for managing the proxy remotely.
+# Disabled by default for security.
+
+remote-management:
+  allow-remote: false
+  secret-key: ""
+  disable-control-panel: true
+
+# =============================================================================
+# USAGE STATISTICS (Optional)
+# =============================================================================
+# Track token usage across accounts. Disabled by default.
+
+usage-statistics-enabled: false
+
+# =============================================================================
+# AVAILABLE ANTIGRAVITY MODELS
+# =============================================================================
+# Use these model names with Claude Code:
+#
+# Claude Models (recommended):
+#   - gemini-claude-opus-4-5-thinking    # Best quality, extended thinking
+#   - gemini-claude-sonnet-4-5-thinking  # Fast with extended thinking
+#   - gemini-claude-sonnet-4-5           # Fast, standard mode
+#
+# Gemini Models:
+#   - gemini-3-pro-preview               # Gemini 3 Pro (1M context)
+#   - gemini-2.5-flash                   # Gemini 2.5 Flash
+#   - gemini-2.5-flash-lite              # Fastest, lightest
+#
+# GPT Models:
+#   - gpt-oss-120b-medium                # GPT-OSS 120B
+#
+# =============================================================================
+# ENVIRONMENT VARIABLES FOR CLAUDE CODE
+# =============================================================================
+# Add these to your ~/.zshrc or ~/.bashrc:
+#
+#   export ANTHROPIC_BASE_URL="http://127.0.0.1:8317"
+#   export ANTHROPIC_AUTH_TOKEN="sk-your-api-key-here"
+#   export ANTHROPIC_DEFAULT_OPUS_MODEL="gemini-claude-opus-4-5-thinking"
+#   export ANTHROPIC_DEFAULT_SONNET_MODEL="gemini-claude-sonnet-4-5-thinking"
+#   export ANTHROPIC_DEFAULT_HAIKU_MODEL="gemini-claude-sonnet-4-5"
+#
+# =============================================================================

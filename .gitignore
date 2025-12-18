@@ -8,6 +8,12 @@ upstream-source/
 # MCP config with API keys
 .mcp.json
 
+# Environment file with secrets
+.env
+
+# Config with API keys (use config.example.yaml as template)
+config.yaml
+
 # Logs
 logs/
 

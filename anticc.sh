@@ -31,8 +31,18 @@ fi
 # ============================================================================
 export CLIPROXY_DIR="${CLIPROXY_DIR:-$ANTICC_SCRIPT_DIR}"
 export CLIPROXY_CONFIG="${CLIPROXY_CONFIG:-$CLIPROXY_DIR/config.yaml}"
-export CLIPROXY_API_KEY="${CLIPROXY_API_KEY:-sk-046ad23dfe424a369795433c1c9e0cc4f35a7d318c4e1716}"
 export CLIPROXY_MIDDLEWARE="${CLIPROXY_MIDDLEWARE:-$CLIPROXY_DIR/middleware/cliproxy-middleware}"
+
+# API Key - must be set by user or in .env file
+# Generate one: openssl rand -hex 24 | sed 's/^/sk-/'
+if [[ -z "$CLIPROXY_API_KEY" ]]; then
+    # Try loading from .env file if it exists
+    if [[ -f "$CLIPROXY_DIR/.env" ]]; then
+        # shellcheck disable=SC1091
+        source "$CLIPROXY_DIR/.env"
+    fi
+fi
+export CLIPROXY_API_KEY="${CLIPROXY_API_KEY:-}"
 
 # Ports
 ANTICC_CLIPROXY_PORT=8317
