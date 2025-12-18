@@ -5,6 +5,9 @@ upstream-source/
 .claude/
 .vscode/
 
+# MCP config with API keys
+.mcp.json
+
 # Logs
 logs/
 
