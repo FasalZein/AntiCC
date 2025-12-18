@@ -19,9 +19,9 @@
 # Detect script directory (works even when sourced in bash and zsh)
 if [[ -n "${BASH_SOURCE[0]}" ]]; then
     ANTICC_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-elif [[ -n "${(%):-%x}" ]]; then
-    # zsh
-    ANTICC_SCRIPT_DIR="$(cd "$(dirname "${(%):-%x}")" && pwd)"
+elif [[ -n "$ZSH_VERSION" ]]; then
+    # zsh - use eval to avoid bash parse errors on zsh-specific syntax
+    eval 'ANTICC_SCRIPT_DIR="$(cd "$(dirname "${(%):-%x}")" && pwd)"'
 elif [[ -n "$0" ]]; then
     ANTICC_SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 fi
