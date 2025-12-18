@@ -16,9 +16,12 @@
 #   - JSON Schema normalization for Gemini/MCP compatibility
 # ============================================================================
 
-# Detect script directory (works even when sourced)
+# Detect script directory (works even when sourced in bash and zsh)
 if [[ -n "${BASH_SOURCE[0]}" ]]; then
     ANTICC_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+elif [[ -n "${(%):-%x}" ]]; then
+    # zsh
+    ANTICC_SCRIPT_DIR="$(cd "$(dirname "${(%):-%x}")" && pwd)"
 elif [[ -n "$0" ]]; then
     ANTICC_SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 fi
@@ -32,12 +35,12 @@ export CLIPROXY_API_KEY="${CLIPROXY_API_KEY:-sk-046ad23dfe424a369795433c1c9e0cc4
 export CLIPROXY_MIDDLEWARE="${CLIPROXY_MIDDLEWARE:-$CLIPROXY_DIR/middleware/cliproxy-middleware}"
 
 # Ports
-CLIPROXY_PORT=8317
-MIDDLEWARE_PORT=8318
+ANTICC_CLIPROXY_PORT=8317
+ANTICC_MIDDLEWARE_PORT=8318
 
 # Log files
-CLIPROXY_LOG="/tmp/cliproxy.log"
-MIDDLEWARE_LOG="/tmp/cliproxy-middleware.log"
+ANTICC_CLIPROXY_LOG="/tmp/cliproxy.log"
+ANTICC_MIDDLEWARE_LOG="/tmp/cliproxy-middleware.log"
 
 # Claude Code Router (optional)
 export CCR_CONFIG="${CCR_CONFIG:-$HOME/.claude-code-router/config.json}"
@@ -46,7 +49,7 @@ export CCR_CONFIG="${CCR_CONFIG:-$HOME/.claude-code-router/config.json}"
 # ENVIRONMENT VARIABLES FOR CLAUDE CODE
 # ============================================================================
 # Point to middleware (8318) which proxies to CLIProxyAPI (8317)
-export ANTHROPIC_BASE_URL="http://127.0.0.1:${MIDDLEWARE_PORT}"
+export ANTHROPIC_BASE_URL="http://127.0.0.1:${ANTICC_MIDDLEWARE_PORT}"
 export ANTHROPIC_API_KEY="$CLIPROXY_API_KEY"
 
 # Antigravity Claude models (gemini- prefix required for Antigravity backend)
@@ -59,35 +62,35 @@ export ANTHROPIC_DEFAULT_HAIKU_MODEL="${ANTHROPIC_DEFAULT_HAIKU_MODEL:-gemini-cl
 # COLORS (with fallback for non-color terminals)
 # ============================================================================
 if [[ -t 1 ]] && command -v tput &>/dev/null && [[ $(tput colors 2>/dev/null) -ge 8 ]]; then
-    RED=$(tput setaf 1)
-    GREEN=$(tput setaf 2)
-    YELLOW=$(tput setaf 3)
-    BLUE=$(tput setaf 4)
-    BOLD=$(tput bold)
-    NC=$(tput sgr0)
+    ANTICC_RED=$(tput setaf 1)
+    ANTICC_GREEN=$(tput setaf 2)
+    ANTICC_YELLOW=$(tput setaf 3)
+    ANTICC_BLUE=$(tput setaf 4)
+    ANTICC_BOLD=$(tput bold)
+    ANTICC_NC=$(tput sgr0)
 else
-    RED=''
-    GREEN=''
-    YELLOW=''
-    BLUE=''
-    BOLD=''
-    NC=''
+    ANTICC_RED=''
+    ANTICC_GREEN=''
+    ANTICC_YELLOW=''
+    ANTICC_BLUE=''
+    ANTICC_BOLD=''
+    ANTICC_NC=''
 fi
 
 # ============================================================================
-# UTILITY FUNCTIONS
+# UTILITY FUNCTIONS (internal)
 # ============================================================================
 
 _anticc_log() {
-    echo -e "${GREEN}[anticc]${NC} $*"
+    echo -e "${ANTICC_GREEN}[anticc]${ANTICC_NC} $*"
 }
 
 _anticc_warn() {
-    echo -e "${YELLOW}[anticc]${NC} $*" >&2
+    echo -e "${ANTICC_YELLOW}[anticc]${ANTICC_NC} $*" >&2
 }
 
 _anticc_error() {
-    echo -e "${RED}[anticc]${NC} $*" >&2
+    echo -e "${ANTICC_RED}[anticc]${ANTICC_NC} $*" >&2
 }
 
 _anticc_check_dependency() {
@@ -128,14 +131,23 @@ _anticc_wait_for_url() {
 }
 
 # ============================================================================
-# CORE FUNCTIONS
+# CLEAR EXISTING ALIASES (prevents zsh parsing errors)
+# ============================================================================
+# zsh cannot define a function if an alias with the same name exists.
+# Unalias all potential function names to avoid "defining function based on alias" errors.
+{
+    unalias anticc-up anticc-stop anticc-restart anticc-status anticc-test \
+            anticc-show anticc-opus anticc-sonnet anticc-models anticc-accounts \
+            anticc-login anticc-init anticc-logs anticc-mw-logs anticc-dir \
+            anticc-config anticc-help 2>/dev/null
+} 2>/dev/null
+
+# ============================================================================
+# CORE FUNCTIONS (public API)
 # ============================================================================
 
 # Start CLIProxyAPI and middleware
 anticc-up() {
-    local cliproxy_started=false
-    local middleware_started=false
-
     # Check dependencies
     if ! _anticc_check_dependency "CLIProxyAPI" "brew install router-for-me/tap/cliproxyapi"; then
         return 1
@@ -154,17 +166,16 @@ anticc-up() {
             _anticc_warn "Using default configuration"
         fi
 
-        CLIProxyAPI --config "$CLIPROXY_CONFIG" > "$CLIPROXY_LOG" 2>&1 &
+        CLIProxyAPI --config "$CLIPROXY_CONFIG" > "$ANTICC_CLIPROXY_LOG" 2>&1 &
 
-        if _anticc_wait_for_url "http://127.0.0.1:${CLIPROXY_PORT}/v1/models" 20 "Authorization: Bearer $CLIPROXY_API_KEY"; then
-            _anticc_log "${GREEN}CLIProxyAPI ready${NC} on http://127.0.0.1:${CLIPROXY_PORT}"
-            cliproxy_started=true
+        if _anticc_wait_for_url "http://127.0.0.1:${ANTICC_CLIPROXY_PORT}/v1/models" 20 "Authorization: Bearer $CLIPROXY_API_KEY"; then
+            _anticc_log "${ANTICC_GREEN}CLIProxyAPI ready${ANTICC_NC} on http://127.0.0.1:${ANTICC_CLIPROXY_PORT}"
         else
-            _anticc_error "CLIProxyAPI failed to start. Check: tail $CLIPROXY_LOG"
+            _anticc_error "CLIProxyAPI failed to start. Check: tail $ANTICC_CLIPROXY_LOG"
             return 1
         fi
     else
-        _anticc_log "${GREEN}CLIProxyAPI already running${NC} (PID: $(_anticc_get_pid 'CLIProxyAPI'))"
+        _anticc_log "${ANTICC_GREEN}CLIProxyAPI already running${ANTICC_NC} (PID: $(_anticc_get_pid 'CLIProxyAPI'))"
     fi
 
     # Start middleware if not running
@@ -177,22 +188,21 @@ anticc-up() {
             return 1
         fi
 
-        "$CLIPROXY_MIDDLEWARE" > "$MIDDLEWARE_LOG" 2>&1 &
+        "$CLIPROXY_MIDDLEWARE" > "$ANTICC_MIDDLEWARE_LOG" 2>&1 &
 
-        if _anticc_wait_for_url "http://127.0.0.1:${MIDDLEWARE_PORT}/health" 20; then
-            _anticc_log "${GREEN}Middleware ready${NC} on http://127.0.0.1:${MIDDLEWARE_PORT}"
+        if _anticc_wait_for_url "http://127.0.0.1:${ANTICC_MIDDLEWARE_PORT}/health" 20; then
+            _anticc_log "${ANTICC_GREEN}Middleware ready${ANTICC_NC} on http://127.0.0.1:${ANTICC_MIDDLEWARE_PORT}"
             _anticc_log "  Features: token counting, schema normalization"
-            middleware_started=true
         else
-            _anticc_error "Middleware failed to start. Check: tail $MIDDLEWARE_LOG"
+            _anticc_error "Middleware failed to start. Check: tail $ANTICC_MIDDLEWARE_LOG"
             return 1
         fi
     else
-        _anticc_log "${GREEN}Middleware already running${NC} (PID: $(_anticc_get_pid 'cliproxy-middleware'))"
+        _anticc_log "${ANTICC_GREEN}Middleware already running${ANTICC_NC} (PID: $(_anticc_get_pid 'cliproxy-middleware'))"
     fi
 
     echo ""
-    _anticc_log "Ready! Run ${BOLD}claude${NC} to start coding."
+    _anticc_log "Ready! Run ${ANTICC_BOLD}claude${ANTICC_NC} to start coding."
     return 0
 }
 
@@ -226,56 +236,56 @@ anticc-restart() {
 
 # Show status of services
 anticc-status() {
-    echo "${BOLD}Service Status:${NC}"
+    echo "${ANTICC_BOLD}Service Status:${ANTICC_NC}"
     echo ""
 
     if _anticc_is_running "CLIProxyAPI"; then
         local pid=$(_anticc_get_pid 'CLIProxyAPI')
-        echo "  CLIProxyAPI:  ${GREEN}running${NC} (PID: $pid) on port $CLIPROXY_PORT"
+        echo "  CLIProxyAPI:  ${ANTICC_GREEN}running${ANTICC_NC} (PID: $pid) on port $ANTICC_CLIPROXY_PORT"
     else
-        echo "  CLIProxyAPI:  ${RED}not running${NC}"
+        echo "  CLIProxyAPI:  ${ANTICC_RED}not running${ANTICC_NC}"
     fi
 
     if _anticc_is_running "cliproxy-middleware"; then
         local pid=$(_anticc_get_pid 'cliproxy-middleware')
-        echo "  Middleware:   ${GREEN}running${NC} (PID: $pid) on port $MIDDLEWARE_PORT"
+        echo "  Middleware:   ${ANTICC_GREEN}running${ANTICC_NC} (PID: $pid) on port $ANTICC_MIDDLEWARE_PORT"
     else
-        echo "  Middleware:   ${RED}not running${NC}"
+        echo "  Middleware:   ${ANTICC_RED}not running${ANTICC_NC}"
     fi
 
     echo ""
-    echo "${BOLD}Environment:${NC}"
+    echo "${ANTICC_BOLD}Environment:${ANTICC_NC}"
     echo "  ANTHROPIC_BASE_URL: $ANTHROPIC_BASE_URL"
 }
 
 # Test connectivity
 anticc-test() {
-    echo "${BOLD}Testing connectivity...${NC}"
+    echo "${ANTICC_BOLD}Testing connectivity...${ANTICC_NC}"
     echo ""
 
     # Test CLIProxyAPI
-    if curl -sf "http://127.0.0.1:${CLIPROXY_PORT}/v1/models" -H "Authorization: Bearer $CLIPROXY_API_KEY" >/dev/null 2>&1; then
-        echo "  CLIProxyAPI (${CLIPROXY_PORT}): ${GREEN}OK${NC}"
+    if curl -sf "http://127.0.0.1:${ANTICC_CLIPROXY_PORT}/v1/models" -H "Authorization: Bearer $CLIPROXY_API_KEY" >/dev/null 2>&1; then
+        echo "  CLIProxyAPI (${ANTICC_CLIPROXY_PORT}): ${ANTICC_GREEN}OK${ANTICC_NC}"
     else
-        echo "  CLIProxyAPI (${CLIPROXY_PORT}): ${RED}FAILED${NC}"
+        echo "  CLIProxyAPI (${ANTICC_CLIPROXY_PORT}): ${ANTICC_RED}FAILED${ANTICC_NC}"
     fi
 
     # Test Middleware
-    if curl -sf "http://127.0.0.1:${MIDDLEWARE_PORT}/health" >/dev/null 2>&1; then
-        echo "  Middleware (${MIDDLEWARE_PORT}):  ${GREEN}OK${NC}"
+    if curl -sf "http://127.0.0.1:${ANTICC_MIDDLEWARE_PORT}/health" >/dev/null 2>&1; then
+        echo "  Middleware (${ANTICC_MIDDLEWARE_PORT}):  ${ANTICC_GREEN}OK${ANTICC_NC}"
     else
-        echo "  Middleware (${MIDDLEWARE_PORT}):  ${RED}FAILED${NC}"
+        echo "  Middleware (${ANTICC_MIDDLEWARE_PORT}):  ${ANTICC_RED}FAILED${ANTICC_NC}"
     fi
 }
 
 # Show current model configuration
 anticc-show() {
-    echo "${BOLD}Current Model Configuration:${NC}"
+    echo "${ANTICC_BOLD}Current Model Configuration:${ANTICC_NC}"
     echo "  OPUS:   $ANTHROPIC_DEFAULT_OPUS_MODEL"
     echo "  SONNET: $ANTHROPIC_DEFAULT_SONNET_MODEL"
     echo "  HAIKU:  $ANTHROPIC_DEFAULT_HAIKU_MODEL"
     echo ""
-    echo "${BOLD}API Endpoint:${NC}"
+    echo "${ANTICC_BOLD}API Endpoint:${ANTICC_NC}"
     echo "  $ANTHROPIC_BASE_URL"
 }
 
@@ -284,7 +294,7 @@ anticc-opus() {
     export ANTHROPIC_DEFAULT_OPUS_MODEL="gemini-claude-opus-4-5-thinking"
     export ANTHROPIC_DEFAULT_SONNET_MODEL="gemini-claude-opus-4-5-thinking"
     export ANTHROPIC_DEFAULT_HAIKU_MODEL="gemini-claude-sonnet-4-5"
-    _anticc_log "Switched to ${BOLD}Opus${NC} as main driver (best quality)"
+    _anticc_log "Switched to ${ANTICC_BOLD}Opus${ANTICC_NC} as main driver (best quality)"
     anticc-show
 }
 
@@ -293,7 +303,7 @@ anticc-sonnet() {
     export ANTHROPIC_DEFAULT_OPUS_MODEL="gemini-claude-opus-4-5-thinking"
     export ANTHROPIC_DEFAULT_SONNET_MODEL="gemini-claude-sonnet-4-5-thinking"
     export ANTHROPIC_DEFAULT_HAIKU_MODEL="gemini-claude-sonnet-4-5"
-    _anticc_log "Switched to ${BOLD}Sonnet${NC} as main driver (faster)"
+    _anticc_log "Switched to ${ANTICC_BOLD}Sonnet${ANTICC_NC} as main driver (faster)"
     anticc-show
 }
 
@@ -304,8 +314,8 @@ anticc-models() {
         return 1
     fi
 
-    echo "${BOLD}Available Models:${NC}"
-    curl -s "http://127.0.0.1:${CLIPROXY_PORT}/v1/models" \
+    echo "${ANTICC_BOLD}Available Models:${ANTICC_NC}"
+    curl -s "http://127.0.0.1:${ANTICC_CLIPROXY_PORT}/v1/models" \
         -H "Authorization: Bearer $CLIPROXY_API_KEY" | \
         python3 -c "
 import sys, json
@@ -322,7 +332,7 @@ except Exception as e:
 anticc-accounts() {
     local auth_dir="$HOME/.cli-proxy-api"
 
-    echo "${BOLD}Antigravity Accounts:${NC}"
+    echo "${ANTICC_BOLD}Antigravity Accounts:${ANTICC_NC}"
 
     if [[ -d "$auth_dir" ]]; then
         local count=0
@@ -336,11 +346,11 @@ anticc-accounts() {
         done
 
         if [[ $count -eq 0 ]]; then
-            echo "  ${YELLOW}No accounts configured${NC}"
+            echo "  ${ANTICC_YELLOW}No accounts configured${ANTICC_NC}"
             echo "  Add one with: anticc-login"
         fi
     else
-        echo "  ${YELLOW}Auth directory not found${NC}"
+        echo "  ${ANTICC_YELLOW}Auth directory not found${ANTICC_NC}"
         echo "  Add an account with: anticc-login"
     fi
 }
@@ -357,7 +367,7 @@ anticc-login() {
 
 # Full initialization and status check
 anticc-init() {
-    echo "${BOLD}=== Antigravity Claude Code Setup ===${NC}"
+    echo "${ANTICC_BOLD}=== Antigravity Claude Code Setup ===${ANTICC_NC}"
     echo ""
 
     # Check accounts
@@ -381,7 +391,27 @@ anticc-init() {
     echo ""
     anticc-show
     echo ""
-    _anticc_log "Ready! Use ${BOLD}claude${NC} to start coding."
+    _anticc_log "Ready! Use ${ANTICC_BOLD}claude${ANTICC_NC} to start coding."
+}
+
+# View CLIProxyAPI logs
+anticc-logs() {
+    tail -f "$ANTICC_CLIPROXY_LOG"
+}
+
+# View middleware logs
+anticc-mw-logs() {
+    tail -f "$ANTICC_MIDDLEWARE_LOG"
+}
+
+# Go to project directory
+anticc-dir() {
+    cd "$CLIPROXY_DIR" || return 1
+}
+
+# Edit config file
+anticc-config() {
+    ${EDITOR:-${VISUAL:-nano}} "$CLIPROXY_CONFIG"
 }
 
 # Help
@@ -433,39 +463,32 @@ EOF
 }
 
 # ============================================================================
-# ALIASES (only defined when sourced, not when run directly)
+# ALIASES (simple shortcuts only - no function name conflicts)
 # ============================================================================
 
-if [[ "${BASH_SOURCE[0]}" != "${0}" ]] || [[ -n "$ZSH_EVAL_CONTEXT" && "$ZSH_EVAL_CONTEXT" =~ :file$ ]]; then
-    # Script is being sourced - define aliases
+# Only define aliases when sourced (not when run directly)
+# Check if running in zsh or bash sourced mode
+_anticc_is_sourced() {
+    if [[ -n "$ZSH_VERSION" ]]; then
+        # In zsh, ZSH_EVAL_CONTEXT contains "file" when sourced
+        # Examples: "toplevel:file", "cmdarg:file", "file"
+        # When run directly: "toplevel" or "cmdarg" (no "file")
+        [[ "$ZSH_EVAL_CONTEXT" == *"file"* ]]
+    else
+        [[ "${BASH_SOURCE[0]}" != "${0}" ]]
+    fi
+}
 
-    # Start CLIProxyAPI server (foreground)
+if _anticc_is_sourced; then
+    # Simple command aliases (these don't conflict with function names)
     alias anticc='CLIProxyAPI --config "$CLIPROXY_CONFIG"'
     alias anticc-start='CLIProxyAPI --config "$CLIPROXY_CONFIG"'
-
-    # Start in background
-    alias anticc-bg='CLIProxyAPI --config "$CLIPROXY_CONFIG" > "$CLIPROXY_LOG" 2>&1 &'
-
-    # View logs
-    alias anticc-logs='tail -f /tmp/cliproxy.log'
-    alias anticc-mw-logs='tail -f /tmp/cliproxy-middleware.log'
-
-    # Add account (alias for login)
+    alias anticc-bg='CLIProxyAPI --config "$CLIPROXY_CONFIG" > "$ANTICC_CLIPROXY_LOG" 2>&1 &'
     alias anticc-add='anticc-login'
-
-    # Directory and config
-    alias anticc-dir='cd "$CLIPROXY_DIR"'
-    alias anticc-config='${EDITOR:-${VISUAL:-nano}} "$CLIPROXY_CONFIG"'
-
-    # Backward compatibility
     alias anticc-claude='anticc-opus'
 
-    # ========================================================================
-    # CLAUDE CODE ROUTER INTEGRATION (optional)
-    # ========================================================================
-
+    # Claude Code Router integration (if available)
     if command -v ccr &>/dev/null; then
-        # Start CLIProxyAPI and then run Claude Code through the router
         ccr-start() {
             _anticc_log "Starting CLIProxyAPI backend..."
             anticc-up
@@ -476,7 +499,6 @@ if [[ "${BASH_SOURCE[0]}" != "${0}" ]] || [[ -n "$ZSH_EVAL_CONTEXT" && "$ZSH_EVA
             fi
         }
 
-        # Run Claude Code through the router
         ccr-code() {
             if ! _anticc_is_running "cliproxy-middleware"; then
                 _anticc_log "Starting CLIProxyAPI and middleware..."
@@ -496,8 +518,7 @@ fi
 # CLI MODE (when script is run directly, not sourced)
 # ============================================================================
 
-if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-    # Script is being run directly
+if ! _anticc_is_sourced; then
     case "${1:-help}" in
         up|start)
             anticc-up
@@ -536,10 +557,13 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
             anticc-login
             ;;
         logs)
-            tail -f "$CLIPROXY_LOG"
+            anticc-logs
             ;;
         mw-logs|middleware-logs)
-            tail -f "$MIDDLEWARE_LOG"
+            anticc-mw-logs
+            ;;
+        dir)
+            echo "$CLIPROXY_DIR"
             ;;
         help|--help|-h|"")
             anticc-help
