@@ -9,10 +9,15 @@ export CLIPROXY_DIR="/Users/tothemoon/Dev/Code Forge/CLIProxyAPI"
 export CLIPROXY_API_KEY="sk-046ad23dfe424a369795433c1c9e0cc4f35a7d318c4e1716"
 export CCR_CONFIG="$HOME/.claude-code-router/config.json"
 
+# Middleware configuration
+export CLIPROXY_MIDDLEWARE="$CLIPROXY_DIR/middleware/cliproxy-middleware"
+
 # ============================================================================
 # ENVIRONMENT VARIABLES FOR CLAUDE CODE
 # ============================================================================
-export ANTHROPIC_BASE_URL="http://127.0.0.1:8317"
+# Point to middleware (8318) which proxies to CLIProxyAPI (8317)
+# Middleware adds: token counting, schema normalization for MCP compatibility
+export ANTHROPIC_BASE_URL="http://127.0.0.1:8318"
 export ANTHROPIC_API_KEY="$CLIPROXY_API_KEY"
 
 # Antigravity Claude models (gemini- prefix required)
@@ -32,17 +37,18 @@ alias anticc-start='CLIProxyAPI --config "$CLIPROXY_CONFIG"'
 # Start CLIProxyAPI in background
 alias anticc-bg='CLIProxyAPI --config "$CLIPROXY_CONFIG" > /tmp/cliproxy.log 2>&1 &'
 
-# Stop CLIProxyAPI
-alias anticc-stop='pkill -f "CLIProxyAPI" && echo "CLIProxyAPI stopped"'
+# Stop CLIProxyAPI and middleware
+alias anticc-stop='pkill -f "cliproxy-middleware" 2>/dev/null; pkill -f "CLIProxyAPI" 2>/dev/null && echo "CLIProxyAPI and middleware stopped"'
 
-# Restart CLIProxyAPI
-alias anticc-restart='anticc-stop; sleep 1; anticc-bg && echo "CLIProxyAPI restarted"'
+# Restart CLIProxyAPI and middleware
+alias anticc-restart='anticc-stop; sleep 1; anticc-up'
 
-# Check if CLIProxyAPI is running
-alias anticc-status='pgrep -f "CLIProxyAPI" > /dev/null && echo "✓ CLIProxyAPI is running (PID: $(pgrep -f CLIProxyAPI))" || echo "✗ CLIProxyAPI is not running"'
+# Check if CLIProxyAPI and middleware are running
+alias anticc-status='echo "CLIProxyAPI: $(pgrep -f \"CLIProxyAPI\" > /dev/null && echo \"✓ running (PID: $(pgrep -f CLIProxyAPI))\" || echo \"✗ not running\")"; echo "Middleware:  $(pgrep -f \"cliproxy-middleware\" > /dev/null && echo \"✓ running (PID: $(pgrep -f cliproxy-middleware))\" || echo \"✗ not running\")"'
 
-# View CLIProxyAPI logs
+# View logs
 alias anticc-logs='tail -f /tmp/cliproxy.log'
+alias anticc-mw-logs='tail -f /tmp/cliproxy-middleware.log'
 
 # List available models (with API key)
 alias anticc-models='curl -s http://127.0.0.1:8317/v1/models -H "Authorization: Bearer $CLIPROXY_API_KEY" | python3 -m json.tool 2>/dev/null || echo "CLIProxyAPI not running or error"'
@@ -54,8 +60,8 @@ alias anticc-add='CLIProxyAPI --antigravity-login'
 # List Antigravity accounts
 alias anticc-accounts='ls -la ~/.cli-proxy-api/antigravity-*.json 2>/dev/null | awk "{print \$NF}" | xargs -I {} basename {} .json | sed "s/antigravity-//" | sed "s/_/@/g" | sed "s/@gmail/@gmail./"'
 
-# Quick test (with API key)
-alias anticc-test='curl -s http://127.0.0.1:8317/v1/models -H "Authorization: Bearer $CLIPROXY_API_KEY" > /dev/null && echo "✓ CLIProxyAPI is responding" || echo "✗ CLIProxyAPI not responding"'
+# Quick test - checks middleware (which proxies to CLIProxyAPI)
+alias anticc-test='curl -s http://127.0.0.1:8318/health > /dev/null && echo "✓ Middleware responding (proxies to CLIProxyAPI)" || echo "✗ Middleware not responding"'
 
 # Open config directory
 alias anticc-dir='cd "$CLIPROXY_DIR"'
@@ -67,27 +73,44 @@ alias anticc-config='${EDITOR:-nano} "$CLIPROXY_CONFIG"'
 # FUNCTIONS
 # ============================================================================
 
-# Start CLIProxyAPI and wait for it to be ready
+# Start CLIProxyAPI and middleware, wait for them to be ready
 anticc-up() {
-    if pgrep -f "CLIProxyAPI" > /dev/null; then
-        echo "CLIProxyAPI is already running"
-        return 0
+    # Start CLIProxyAPI if not running
+    if ! pgrep -f "CLIProxyAPI" > /dev/null; then
+        echo "Starting CLIProxyAPI..."
+        CLIProxyAPI --config "$CLIPROXY_CONFIG" > /tmp/cliproxy.log 2>&1 &
+
+        for i in {1..10}; do
+            sleep 0.5
+            if curl -s http://127.0.0.1:8317/v1/models -H "Authorization: Bearer $CLIPROXY_API_KEY" > /dev/null 2>&1; then
+                echo "✓ CLIProxyAPI is ready on http://127.0.0.1:8317"
+                break
+            fi
+        done
+    else
+        echo "✓ CLIProxyAPI already running"
     fi
-    
-    echo "Starting CLIProxyAPI..."
-    CLIProxyAPI --config "$CLIPROXY_CONFIG" > /tmp/cliproxy.log 2>&1 &
-    
-    # Wait for server to be ready
-    for i in {1..10}; do
-        sleep 0.5
-        if curl -s http://127.0.0.1:8317/v1/models -H "Authorization: Bearer $CLIPROXY_API_KEY" > /dev/null 2>&1; then
-            echo "✓ CLIProxyAPI is ready on http://127.0.0.1:8317"
-            return 0
-        fi
-    done
-    
-    echo "✗ CLIProxyAPI failed to start. Check logs: anticc-logs"
-    return 1
+
+    # Start middleware if not running
+    if ! pgrep -f "cliproxy-middleware" > /dev/null; then
+        echo "Starting middleware..."
+        "$CLIPROXY_MIDDLEWARE" > /tmp/cliproxy-middleware.log 2>&1 &
+
+        for i in {1..10}; do
+            sleep 0.5
+            if curl -s http://127.0.0.1:8318/health > /dev/null 2>&1; then
+                echo "✓ Middleware is ready on http://127.0.0.1:8318"
+                echo "  Features: token counting, schema normalization"
+                return 0
+            fi
+        done
+        echo "✗ Middleware failed to start. Check: tail /tmp/cliproxy-middleware.log"
+        return 1
+    else
+        echo "✓ Middleware already running"
+    fi
+
+    return 0
 }
 
 # Full setup: start proxy and verify
@@ -148,14 +171,15 @@ anticc-help() {
     echo "Antigravity Claude Code (anticc) Commands:"
     echo ""
     echo "  Quick Start:"
-    echo "    anticc-up       Start CLIProxyAPI, then use 'claude'"
+    echo "    anticc-up       Start CLIProxyAPI + middleware, then use 'claude'"
     echo ""
     echo "  Server:"
-    echo "    anticc-up       Start CLIProxyAPI (recommended)"
-    echo "    anticc-stop     Stop CLIProxyAPI"
-    echo "    anticc-restart  Restart CLIProxyAPI"
+    echo "    anticc-up       Start CLIProxyAPI and middleware (recommended)"
+    echo "    anticc-stop     Stop both services"
+    echo "    anticc-restart  Restart both services"
     echo "    anticc-status   Check if running"
-    echo "    anticc-logs     View logs"
+    echo "    anticc-logs     View CLIProxyAPI logs"
+    echo "    anticc-mw-logs  View middleware logs"
     echo ""
     echo "  Models:"
     echo "    anticc-opus     Use Opus as main (default, best quality)"
@@ -165,6 +189,10 @@ anticc-help() {
     echo "  Accounts:"
     echo "    anticc-login    Add new Antigravity account"
     echo "    anticc-accounts List configured accounts"
+    echo ""
+    echo "  Architecture:"
+    echo "    Claude Code -> Middleware (8318) -> CLIProxyAPI (8317) -> Antigravity"
+    echo "    Middleware provides: token counting, MCP schema normalization"
     echo ""
     echo "  Claude Code Router:"
     echo "    ccr-code        Run Claude Code through router"
@@ -186,19 +214,19 @@ ccr-start() {
     fi
 }
 
-# Run Claude Code through the router (ensures CLIProxyAPI is running)
+# Run Claude Code through the router (ensures CLIProxyAPI and middleware are running)
 ccr-code() {
-    # Check if CLIProxyAPI is running
-    if ! pgrep -f "CLIProxyAPI" > /dev/null; then
-        echo "Starting CLIProxyAPI backend first..."
+    # Check if middleware is running (which requires CLIProxyAPI)
+    if ! pgrep -f "cliproxy-middleware" > /dev/null; then
+        echo "Starting CLIProxyAPI and middleware..."
         anticc-up
         if [ $? -ne 0 ]; then
-            echo "Failed to start CLIProxyAPI"
+            echo "Failed to start services"
             return 1
         fi
         echo ""
     fi
-    
+
     # Run Claude Code through the router
     ccr code "$@"
 }
