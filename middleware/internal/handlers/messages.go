@@ -12,7 +12,7 @@ import (
 	"cliproxy-middleware/internal/schema"
 )
 
-// Messages intercepts /v1/messages to normalize tool schemas for Gemini compatibility
+// Messages intercepts /v1/messages to normalize tool schemas and map model names
 func Messages(cfg *config.Config, proxy *httputil.ReverseProxy) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if cfg.Debug {
@@ -31,13 +31,31 @@ func Messages(cfg *config.Config, proxy *httputil.ReverseProxy) http.HandlerFunc
 		}
 		r.Body.Close()
 
-		// Parse request to check for tools
+		// Parse request
 		var rawRequest map[string]json.RawMessage
 		if err := json.Unmarshal(body, &rawRequest); err != nil {
 			r.Body = io.NopCloser(bytes.NewReader(body))
 			r.ContentLength = int64(len(body))
 			serveProxy(w, r, proxy)
 			return
+		}
+
+		modified := false
+
+		// Map model name to Antigravity equivalent
+		if modelRaw, hasModel := rawRequest["model"]; hasModel {
+			var model string
+			if err := json.Unmarshal(modelRaw, &model); err == nil {
+				mappedModel := config.MapModel(model)
+				if mappedModel != model {
+					if cfg.Debug {
+						log.Printf("[messages] model mapped: %s -> %s", model, mappedModel)
+					}
+					newModelJSON, _ := json.Marshal(mappedModel)
+					rawRequest["model"] = newModelJSON
+					modified = true
+				}
+			}
 		}
 
 		// Check if there are tools to normalize
@@ -52,49 +70,42 @@ func Messages(cfg *config.Config, proxy *httputil.ReverseProxy) http.HandlerFunc
 				log.Printf("[messages] tools length: %d bytes", len(toolsRaw))
 			}
 		}
-		if !hasTools || len(toolsRaw) == 0 || string(toolsRaw) == "null" {
-			r.Body = io.NopCloser(bytes.NewReader(body))
-			r.ContentLength = int64(len(body))
-			serveProxy(w, r, proxy)
-			return
-		}
 
-		// Parse and normalize tools
-		var tools []map[string]interface{}
-		if err := json.Unmarshal(toolsRaw, &tools); err != nil {
-			r.Body = io.NopCloser(bytes.NewReader(body))
-			r.ContentLength = int64(len(body))
-			serveProxy(w, r, proxy)
-			return
-		}
+		// Normalize tools if present
+		if hasTools && len(toolsRaw) > 0 && string(toolsRaw) != "null" {
+			var tools []map[string]interface{}
+			if err := json.Unmarshal(toolsRaw, &tools); err == nil {
+				for i, tool := range tools {
+					if inputSchema, exists := tool["input_schema"]; exists {
+						if schemaMap, ok := inputSchema.(map[string]interface{}); ok {
+							originalJSON, _ := json.Marshal(schemaMap)
+							normalized := schema.Normalize(schemaMap, cfg.Debug)
+							normalizedJSON, _ := json.Marshal(normalized)
 
-		modified := false
-		for i, tool := range tools {
-			if inputSchema, exists := tool["input_schema"]; exists {
-				if schemaMap, ok := inputSchema.(map[string]interface{}); ok {
-					originalJSON, _ := json.Marshal(schemaMap)
-					normalized := schema.Normalize(schemaMap, cfg.Debug)
-					normalizedJSON, _ := json.Marshal(normalized)
-
-					if string(originalJSON) != string(normalizedJSON) {
-						modified = true
-						tools[i]["input_schema"] = normalized
-						if cfg.Debug {
-							if name, ok := tool["name"].(string); ok {
-								log.Printf("[messages] normalized tool: %s", name)
+							if string(originalJSON) != string(normalizedJSON) {
+								modified = true
+								tools[i]["input_schema"] = normalized
+								if cfg.Debug {
+									if name, ok := tool["name"].(string); ok {
+										log.Printf("[messages] normalized tool: %s", name)
+									}
+								}
 							}
 						}
 					}
 				}
+				if modified {
+					normalizedTools, _ := json.Marshal(tools)
+					rawRequest["tools"] = normalizedTools
+				}
 			}
 		}
 
+		// Apply modifications if any
 		if modified {
-			normalizedTools, _ := json.Marshal(tools)
-			rawRequest["tools"] = normalizedTools
 			newBody, _ := json.Marshal(rawRequest)
 			if cfg.Debug {
-				log.Printf("[messages] schema normalized, %d -> %d bytes", len(body), len(newBody))
+				log.Printf("[messages] request modified, %d -> %d bytes", len(body), len(newBody))
 			}
 			r.Body = io.NopCloser(bytes.NewReader(newBody))
 			r.ContentLength = int64(len(newBody))
