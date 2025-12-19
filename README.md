@@ -1,17 +1,18 @@
-# Claude Code + Antigravity Setup
+# Antigravity AI Proxy Setup
 
-Use Claude Code with Antigravity models (Claude, Gemini, GPT) via CLIProxyAPI - no API keys needed, just your Google account.
+Use AI coding tools (Claude Code, Roo Code, Cursor, etc.) with Antigravity models (Claude, Gemini, GPT) via CLIProxyAPI - no API keys needed, just your Google account.
 
 ## What This Does
 
 ```
-Claude Code → Middleware (8318) → CLIProxyAPI (8317) → Antigravity → Google AI
+AI Tool → Middleware (8318) → CLIProxyAPI (8317) → Antigravity → Google AI
 ```
 
 - **Free access** to Claude Opus 4.5, Sonnet 4.5, Gemini 3 Pro, GPT-OSS via Google OAuth
 - **Multi-account rotation** - add multiple Google accounts to increase rate limits
 - **MCP server support** - middleware normalizes JSON schemas for Gemini compatibility
-- **Works with any Claude Code version** - automatic model name translation
+- **Works with Claude Code, Roo Code, Cursor** - supports both Anthropic and OpenAI APIs
+- **Token counting** - returns usage stats for all requests
 
 ## Quick Start (One Command)
 
@@ -160,7 +161,44 @@ anticc-login  # Add account 3
 
 CLIProxyAPI rotates through accounts automatically. When one hits rate limits, it switches to the next.
 
-## Environment Variables
+## Using with Roo Code / Cursor / Other OpenAI Tools
+
+The middleware supports the OpenAI API format, so you can use it with any OpenAI-compatible tool.
+
+### Roo Code Configuration
+
+In Roo Code settings, configure the API:
+
+```json
+{
+  "openai.apiKey": "sk-your-api-key",
+  "openai.baseUrl": "http://127.0.0.1:8318/v1",
+  "openai.model": "gemini-claude-sonnet-4-5"
+}
+```
+
+### Cursor Configuration
+
+In Cursor settings:
+- API Base URL: `http://127.0.0.1:8318/v1`
+- API Key: Your CLIProxyAPI key from `.env`
+- Model: `gemini-claude-sonnet-4-5`
+
+### Token Usage
+
+All responses include token usage:
+
+```json
+{
+  "usage": {
+    "prompt_tokens": 15,
+    "completion_tokens": 7,
+    "total_tokens": 22
+  }
+}
+```
+
+## Environment Variables (Claude Code)
 
 The `anticc.sh` script sets these automatically, but for reference:
 
@@ -176,20 +214,26 @@ export ANTHROPIC_DEFAULT_HAIKU_MODEL="gemini-claude-sonnet-4-5"
 
 ```
 ┌─────────────┐     ┌──────────────┐     ┌──────────────┐     ┌─────────────┐
-│ Claude Code │────▶│  Middleware  │────▶│ CLIProxyAPI  │────▶│ Antigravity │
+│  AI Tool    │────▶│  Middleware  │────▶│ CLIProxyAPI  │────▶│ Antigravity │
 │             │     │   (8318)     │     │   (8317)     │     │             │
 └─────────────┘     └──────────────┘     └──────────────┘     └─────────────┘
                            │
                            ▼
-                    ┌──────────────┐
-                    │ - Token count│
-                    │ - Schema fix │
-                    └──────────────┘
+                    ┌──────────────────────────┐
+                    │ - Schema normalization   │
+                    │ - Token count (Anthropic)│
+                    └──────────────────────────┘
 ```
 
+**Supported Endpoints:**
+- `/v1/messages` - Anthropic API (Claude Code)
+- `/v1/chat/completions` - OpenAI API (Roo Code, Cursor, etc.)
+- `/v1/messages/count_tokens` - Anthropic token counting
+
 **Middleware provides:**
-- Token counting (local estimation for `/v1/messages/count_tokens`)
 - JSON Schema normalization (removes `propertyNames`, `anyOf`, etc. for Gemini)
+- Token counting (local estimation for Anthropic `/v1/messages/count_tokens`)
+- Streaming support for both APIs
 
 ## Files
 

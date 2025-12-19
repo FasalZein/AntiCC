@@ -23,8 +23,12 @@ func main() {
 
 	// Setup routes
 	mux := http.NewServeMux()
+	// Anthropic-style endpoints
 	mux.HandleFunc("/v1/messages/count_tokens", handlers.TokenCount(cfg))
 	mux.HandleFunc("/v1/messages", handlers.Messages(cfg, reverseProxy))
+	// OpenAI-style endpoints
+	mux.HandleFunc("/v1/chat/completions", handlers.ChatCompletions(cfg, reverseProxy))
+	// Health and default
 	mux.HandleFunc("/health", handlers.Health())
 	mux.HandleFunc("/", defaultHandler(cfg, reverseProxy))
 
@@ -32,7 +36,8 @@ func main() {
 	addr := fmt.Sprintf(":%d", cfg.Port)
 	log.Printf("🚀 CLIProxy Middleware starting on http://127.0.0.1%s", addr)
 	log.Printf("   Upstream: %s", cfg.UpstreamURL)
-	log.Printf("   Token counting: enabled (local estimation)")
+	log.Printf("   Endpoints: /v1/messages (Anthropic), /v1/chat/completions (OpenAI)")
+	log.Printf("   Token counting: enabled (local estimation for Anthropic)")
 	log.Printf("   Schema normalization: enabled (Gemini compatibility)")
 	if cfg.Debug {
 		log.Printf("   Debug mode: enabled")
