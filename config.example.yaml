@@ -54,39 +54,9 @@ quota-exceeded:
   switch-preview-model: true  # Try preview model variant
 
 # =============================================================================
-# MODEL MAPPINGS (Optional)
+# REMOTE MANAGEMENT
 # =============================================================================
-# Map Claude Code's internal model names to Antigravity equivalents.
-# This ensures compatibility when Claude Code requests specific model versions.
-#
-# Enable this section if you want automatic model translation:
-
-# ampcode:
-#   force-model-mappings: true
-#   model-mappings:
-#     # Claude Opus models -> Antigravity Claude Opus (thinking)
-#     - from: claude-opus-4-5-20251101
-#       to: gemini-claude-opus-4-5-thinking
-#     - from: claude-opus-4-5
-#       to: gemini-claude-opus-4-5-thinking
-#
-#     # Claude Sonnet models -> Antigravity Claude Sonnet (thinking)
-#     - from: claude-sonnet-4-5-20250929
-#       to: gemini-claude-sonnet-4-5-thinking
-#     - from: claude-sonnet-4-5
-#       to: gemini-claude-sonnet-4-5-thinking
-#
-#     # Claude Haiku models -> Antigravity Claude Sonnet (faster)
-#     - from: claude-haiku-4-5-20251001
-#       to: gemini-claude-sonnet-4-5
-#     - from: claude-3-5-haiku-20241022
-#       to: gemini-claude-sonnet-4-5
-
-# =============================================================================
-# REMOTE MANAGEMENT (Optional)
-# =============================================================================
-# Web-based control panel for managing the proxy remotely.
-# Disabled by default for security.
+# Settings for remote control panel access
 
 remote-management:
   allow-remote: false
@@ -106,14 +76,14 @@ usage-statistics-enabled: false
 # Use these model names with Claude Code:
 #
 # Claude Models (recommended):
-#   - gemini-claude-opus-4-5-thinking    # Best quality, extended thinking
-#   - gemini-claude-sonnet-4-5-thinking  # Fast with extended thinking
-#   - gemini-claude-sonnet-4-5           # Fast, standard mode
+#   - claude-opus-4-5-thinking           # Best quality, extended thinking
+#   - claude-sonnet-4-5-thinking         # Fast with extended thinking
+#   - claude-sonnet-4-5                  # Fast, standard mode
 #
 # Gemini Models:
-#   - gemini-3-pro-preview               # Gemini 3 Pro (1M context)
-#   - gemini-2.5-flash                   # Gemini 2.5 Flash
-#   - gemini-2.5-flash-lite              # Fastest, lightest
+#   - gemini-3-pro-high                  # Gemini 3 Pro High (1M context)
+#   - gemini-3-pro-low                   # Gemini 3 Pro Low (1M context)
+#   - gemini-3-flash                     # Gemini 3 Flash (fast)
 #
 # GPT Models:
 #   - gpt-oss-120b-medium                # GPT-OSS 120B
