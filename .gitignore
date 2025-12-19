@@ -33,3 +33,4 @@ middleware/cliproxy-middleware
 
 # macOS
 .DS_Store
+middleware/middleware-proxy
