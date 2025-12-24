@@ -23,7 +23,7 @@ cd ~/Dev/AntiCC
 ```
 
 The setup script will:
-1. Install CLIProxyAPI (via Homebrew)
+1. Install CLIProxyAPI (via Homebrew on macOS, direct download on Linux/WSL)
 2. Build the middleware (requires Go 1.21+)
 3. Generate an API key
 4. Create config files
@@ -32,8 +32,8 @@ The setup script will:
 
 ### Requirements
 
-- **macOS** (Linux should work but untested)
-- **Homebrew** - for installing CLIProxyAPI
+- **macOS** or **Linux/WSL** (Windows via WSL)
+- **Homebrew** (macOS) - for installing CLIProxyAPI
 - **Go 1.21+** - for building middleware (optional but recommended for MCP support)
 
 ## Manual Setup
@@ -42,8 +42,25 @@ If you prefer to set up manually:
 
 ### 1. Install CLIProxyAPI
 
+**macOS (Homebrew):**
 ```bash
 brew install router-for-me/tap/cliproxyapi
+```
+
+**Linux/WSL (Direct Download):**
+```bash
+# Download latest release
+VERSION=$(curl -sL https://api.github.com/repos/router-for-me/CLIProxyAPI/releases/latest | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')
+ARCH=$(uname -m | sed 's/x86_64/amd64/' | sed 's/aarch64/arm64/')
+curl -sL "https://github.com/router-for-me/CLIProxyAPI/releases/download/${VERSION}/CLIProxyAPI_Linux_${ARCH}.tar.gz" | tar xz
+
+# Install to ~/.local/bin
+mkdir -p ~/.local/bin
+mv CLIProxyAPI ~/.local/bin/cliproxyapi
+chmod +x ~/.local/bin/cliproxyapi
+
+# Add to PATH (add to ~/.bashrc or ~/.zshrc)
+export PATH="$HOME/.local/bin:$PATH"
 ```
 
 ### 2. Create Config Files
@@ -56,8 +73,11 @@ cp .env.example .env
 API_KEY=$(openssl rand -hex 24 | sed 's/^/sk-/')
 echo "CLIPROXY_API_KEY=\"$API_KEY\"" > .env
 
-# Update config.yaml with your key
+# Update config.yaml with your key (macOS)
 sed -i '' "s/sk-your-api-key-here/$API_KEY/" config.yaml
+
+# Or on Linux:
+# sed -i "s/sk-your-api-key-here/$API_KEY/" config.yaml
 ```
 
 ### 3. Build Middleware (Optional)

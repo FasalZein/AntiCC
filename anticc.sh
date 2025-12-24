@@ -114,6 +114,40 @@ _anticc_check_dependency() {
     return 0
 }
 
+# Get the CLIProxyAPI command (handles both command names)
+_anticc_get_cliproxy_cmd() {
+    if command -v CLIProxyAPI &>/dev/null; then
+        echo "CLIProxyAPI"
+    elif command -v cliproxyapi &>/dev/null; then
+        echo "cliproxyapi"
+    else
+        echo ""
+    fi
+}
+
+# Check if CLIProxyAPI is installed (either command name)
+_anticc_check_cliproxy() {
+    local cmd=$(_anticc_get_cliproxy_cmd)
+    if [[ -z "$cmd" ]]; then
+        _anticc_error "CLIProxyAPI is not installed."
+        # Detect OS for install hint
+        case "$(uname -s)" in
+            Darwin*)
+                echo "  Install: brew install router-for-me/tap/cliproxyapi"
+                ;;
+            Linux*)
+                echo "  Install: Run ./setup.sh or download from:"
+                echo "           https://github.com/router-for-me/CLIProxyAPI/releases"
+                ;;
+            *)
+                echo "  Download from: https://github.com/router-for-me/CLIProxyAPI/releases"
+                ;;
+        esac
+        return 1
+    fi
+    return 0
+}
+
 _anticc_is_running() {
     local pattern="$1"
     pgrep -f "$pattern" >/dev/null 2>&1
@@ -159,7 +193,7 @@ _anticc_wait_for_url() {
 # Start CLIProxyAPI and middleware
 anticc-up() {
     # Check dependencies
-    if ! _anticc_check_dependency "CLIProxyAPI" "brew install router-for-me/tap/cliproxyapi"; then
+    if ! _anticc_check_cliproxy; then
         return 1
     fi
 
@@ -167,8 +201,10 @@ anticc-up() {
         return 1
     fi
 
-    # Start CLIProxyAPI if not running
-    if ! _anticc_is_running "CLIProxyAPI"; then
+    local cliproxy_cmd=$(_anticc_get_cliproxy_cmd)
+
+    # Start CLIProxyAPI if not running (check for both command names)
+    if ! _anticc_is_running "CLIProxyAPI" && ! _anticc_is_running "cliproxyapi"; then
         _anticc_log "Starting CLIProxyAPI..."
 
         if [[ ! -f "$CLIPROXY_CONFIG" ]]; then
@@ -176,7 +212,7 @@ anticc-up() {
             _anticc_warn "Using default configuration"
         fi
 
-        CLIProxyAPI --config "$CLIPROXY_CONFIG" > "$ANTICC_CLIPROXY_LOG" 2>&1 &
+        "$cliproxy_cmd" --config "$CLIPROXY_CONFIG" > "$ANTICC_CLIPROXY_LOG" 2>&1 &
 
         if _anticc_wait_for_url "http://127.0.0.1:${ANTICC_CLIPROXY_PORT}/v1/models" 20 "Authorization: Bearer $CLIPROXY_API_KEY"; then
             _anticc_log "${ANTICC_GREEN}CLIProxyAPI ready${ANTICC_NC} on http://127.0.0.1:${ANTICC_CLIPROXY_PORT}"
@@ -185,7 +221,9 @@ anticc-up() {
             return 1
         fi
     else
-        _anticc_log "${ANTICC_GREEN}CLIProxyAPI already running${ANTICC_NC} (PID: $(_anticc_get_pid 'CLIProxyAPI'))"
+        local pid=$(_anticc_get_pid 'CLIProxyAPI')
+        [[ -z "$pid" ]] && pid=$(_anticc_get_pid 'cliproxyapi')
+        _anticc_log "${ANTICC_GREEN}CLIProxyAPI already running${ANTICC_NC} (PID: $pid)"
     fi
 
     # Start middleware if not running
@@ -226,8 +264,10 @@ anticc-stop() {
         stopped=true
     fi
 
-    if _anticc_is_running "CLIProxyAPI"; then
+    # Stop CLIProxyAPI (check both command names)
+    if _anticc_is_running "CLIProxyAPI" || _anticc_is_running "cliproxyapi"; then
         pkill -f "CLIProxyAPI" 2>/dev/null
+        pkill -f "cliproxyapi" 2>/dev/null
         _anticc_log "CLIProxyAPI stopped"
         stopped=true
     fi
@@ -249,8 +289,10 @@ anticc-status() {
     echo "${ANTICC_BOLD}Service Status:${ANTICC_NC}"
     echo ""
 
-    if _anticc_is_running "CLIProxyAPI"; then
+    # Check for both command names
+    if _anticc_is_running "CLIProxyAPI" || _anticc_is_running "cliproxyapi"; then
         local pid=$(_anticc_get_pid 'CLIProxyAPI')
+        [[ -z "$pid" ]] && pid=$(_anticc_get_pid 'cliproxyapi')
         echo "  CLIProxyAPI:  ${ANTICC_GREEN}running${ANTICC_NC} (PID: $pid) on port $ANTICC_CLIPROXY_PORT"
     else
         echo "  CLIProxyAPI:  ${ANTICC_RED}not running${ANTICC_NC}"
@@ -367,12 +409,13 @@ anticc-accounts() {
 
 # Add new Antigravity account
 anticc-login() {
-    _anticc_check_dependency "CLIProxyAPI" "brew install router-for-me/tap/cliproxyapi" || return 1
+    _anticc_check_cliproxy || return 1
 
+    local cliproxy_cmd=$(_anticc_get_cliproxy_cmd)
     _anticc_log "Opening browser for Antigravity OAuth login..."
     _anticc_log "Note: OAuth callback uses port 51121"
     echo ""
-    CLIProxyAPI --antigravity-login
+    "$cliproxy_cmd" --antigravity-login
 }
 
 # Full initialization and status check
@@ -490,10 +533,16 @@ _anticc_is_sourced() {
 }
 
 if _anticc_is_sourced; then
+    # Determine the CLIProxyAPI command for aliases
+    _ANTICC_CMD=$(_anticc_get_cliproxy_cmd)
+    if [[ -z "$_ANTICC_CMD" ]]; then
+        _ANTICC_CMD="cliproxyapi"  # Default, will fail gracefully if not installed
+    fi
+
     # Simple command aliases (these don't conflict with function names)
-    alias anticc='CLIProxyAPI --config "$CLIPROXY_CONFIG"'
-    alias anticc-start='CLIProxyAPI --config "$CLIPROXY_CONFIG"'
-    alias anticc-bg='CLIProxyAPI --config "$CLIPROXY_CONFIG" > "$ANTICC_CLIPROXY_LOG" 2>&1 &'
+    alias anticc="$_ANTICC_CMD --config \"\$CLIPROXY_CONFIG\""
+    alias anticc-start="$_ANTICC_CMD --config \"\$CLIPROXY_CONFIG\""
+    alias anticc-bg="$_ANTICC_CMD --config \"\$CLIPROXY_CONFIG\" > \"\$ANTICC_CLIPROXY_LOG\" 2>&1 &"
     alias anticc-add='anticc-login'
     alias anticc-claude='anticc-opus'
 

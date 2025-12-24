@@ -3,7 +3,7 @@
 # CLIProxyAPI + Antigravity Setup Script
 # =============================================================================
 # This script sets up everything needed to use Claude Code with Antigravity:
-# 1. Installs CLIProxyAPI (via Homebrew)
+# 1. Installs CLIProxyAPI (via Homebrew on macOS, direct download on Linux/WSL)
 # 2. Builds the middleware (requires Go)
 # 3. Creates config files from examples
 # 4. Generates an API key
@@ -27,9 +27,34 @@ error() { echo -e "${RED}[error]${NC} $*"; }
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+# Detect OS
+detect_os() {
+    case "$(uname -s)" in
+        Darwin*)    echo "macos" ;;
+        Linux*)     echo "linux" ;;
+        MINGW*|MSYS*|CYGWIN*) echo "windows" ;;
+        *)          echo "unknown" ;;
+    esac
+}
+
+# Detect architecture
+detect_arch() {
+    case "$(uname -m)" in
+        x86_64|amd64)   echo "amd64" ;;
+        arm64|aarch64)  echo "arm64" ;;
+        armv7l)         echo "arm" ;;
+        *)              echo "unknown" ;;
+    esac
+}
+
+OS=$(detect_os)
+ARCH=$(detect_arch)
+
 echo ""
 echo "=============================================="
 echo "  CLIProxyAPI + Antigravity Setup"
+echo "=============================================="
+echo "  OS: $OS, Arch: $ARCH"
 echo "=============================================="
 echo ""
 
@@ -38,19 +63,121 @@ echo ""
 # =============================================================================
 log "Checking CLIProxyAPI..."
 
+# Check for either command name (CLIProxyAPI or cliproxyapi)
+CLIPROXY_CMD=""
 if command -v CLIProxyAPI &>/dev/null; then
-    log "CLIProxyAPI already installed: $(CLIProxyAPI --version 2>/dev/null || echo 'unknown version')"
-else
-    if command -v brew &>/dev/null; then
-        log "Installing CLIProxyAPI via Homebrew..."
-        brew install router-for-me/tap/cliproxyapi
-    else
-        error "Homebrew not found. Please install CLIProxyAPI manually:"
-        echo "  brew install router-for-me/tap/cliproxyapi"
-        echo "  Or download from: https://github.com/router-for-me/CLIProxyAPI/releases"
-        exit 1
-    fi
+    CLIPROXY_CMD="CLIProxyAPI"
+elif command -v cliproxyapi &>/dev/null; then
+    CLIPROXY_CMD="cliproxyapi"
 fi
+
+if [[ -n "$CLIPROXY_CMD" ]]; then
+    log "CLIProxyAPI already installed: $($CLIPROXY_CMD --help 2>&1 | head -1 || echo 'unknown version')"
+else
+    case "$OS" in
+        macos)
+            if command -v brew &>/dev/null; then
+                log "Installing CLIProxyAPI via Homebrew..."
+                brew install router-for-me/tap/cliproxyapi
+                CLIPROXY_CMD="cliproxyapi"
+            else
+                error "Homebrew not found. Please install CLIProxyAPI manually:"
+                echo "  brew install router-for-me/tap/cliproxyapi"
+                echo "  Or download from: https://github.com/router-for-me/CLIProxyAPI/releases"
+                exit 1
+            fi
+            ;;
+        linux)
+            log "Installing CLIProxyAPI for Linux..."
+            
+            # Determine download URL based on architecture
+            DOWNLOAD_ARCH="$ARCH"
+            if [[ "$ARCH" == "amd64" ]]; then
+                DOWNLOAD_ARCH="amd64"
+            elif [[ "$ARCH" == "arm64" ]]; then
+                DOWNLOAD_ARCH="arm64"
+            else
+                error "Unsupported architecture: $ARCH"
+                echo "  Please download manually from: https://github.com/router-for-me/CLIProxyAPI/releases"
+                exit 1
+            fi
+            
+            # Get latest release version
+            log "Fetching latest release..."
+            LATEST_VERSION=$(curl -sL "https://api.github.com/repos/router-for-me/CLIProxyAPI/releases/latest" | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/' || echo "")
+            
+            if [[ -z "$LATEST_VERSION" ]]; then
+                warn "Could not determine latest version, using v6.6.42"
+                LATEST_VERSION="v6.6.42"
+            fi
+            
+            log "Latest version: $LATEST_VERSION"
+            
+            # Download URL
+            DOWNLOAD_URL="https://github.com/router-for-me/CLIProxyAPI/releases/download/${LATEST_VERSION}/CLIProxyAPI_Linux_${DOWNLOAD_ARCH}.tar.gz"
+            
+            # Create temp directory
+            TEMP_DIR=$(mktemp -d)
+            trap "rm -rf $TEMP_DIR" EXIT
+            
+            log "Downloading from: $DOWNLOAD_URL"
+            if curl -sL "$DOWNLOAD_URL" -o "$TEMP_DIR/cliproxyapi.tar.gz"; then
+                log "Extracting..."
+                tar -xzf "$TEMP_DIR/cliproxyapi.tar.gz" -C "$TEMP_DIR"
+                
+                # Find the binary
+                BINARY_PATH=$(find "$TEMP_DIR" -name "CLIProxyAPI" -o -name "cliproxyapi" 2>/dev/null | head -1)
+                
+                if [[ -z "$BINARY_PATH" ]]; then
+                    # Try looking for any executable
+                    BINARY_PATH=$(find "$TEMP_DIR" -type f -executable 2>/dev/null | head -1)
+                fi
+                
+                if [[ -n "$BINARY_PATH" && -f "$BINARY_PATH" ]]; then
+                    # Install to /usr/local/bin or ~/.local/bin
+                    if [[ -w "/usr/local/bin" ]]; then
+                        INSTALL_DIR="/usr/local/bin"
+                    else
+                        INSTALL_DIR="$HOME/.local/bin"
+                        mkdir -p "$INSTALL_DIR"
+                    fi
+                    
+                    cp "$BINARY_PATH" "$INSTALL_DIR/cliproxyapi"
+                    chmod +x "$INSTALL_DIR/cliproxyapi"
+                    
+                    # Also create CLIProxyAPI symlink for compatibility
+                    ln -sf "$INSTALL_DIR/cliproxyapi" "$INSTALL_DIR/CLIProxyAPI" 2>/dev/null || true
+                    
+                    log "Installed to: $INSTALL_DIR/cliproxyapi"
+                    
+                    # Add to PATH if needed
+                    if [[ "$INSTALL_DIR" == "$HOME/.local/bin" ]] && [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
+                        warn "Please add ~/.local/bin to your PATH:"
+                        echo "  export PATH=\"\$HOME/.local/bin:\$PATH\""
+                        export PATH="$HOME/.local/bin:$PATH"
+                    fi
+                    
+                    CLIPROXY_CMD="cliproxyapi"
+                else
+                    error "Could not find CLIProxyAPI binary in downloaded archive"
+                    exit 1
+                fi
+            else
+                error "Failed to download CLIProxyAPI"
+                echo "  Please download manually from: https://github.com/router-for-me/CLIProxyAPI/releases"
+                exit 1
+            fi
+            ;;
+        *)
+            error "Unsupported OS: $OS"
+            echo "  Please download CLIProxyAPI manually from: https://github.com/router-for-me/CLIProxyAPI/releases"
+            exit 1
+            ;;
+    esac
+fi
+
+# Export the command name for use in anticc.sh
+export CLIPROXY_CMD
 
 # =============================================================================
 # Step 2: Build Middleware
@@ -97,8 +224,12 @@ else
         cp "$SCRIPT_DIR/config.example.yaml" "$SCRIPT_DIR/config.yaml"
         # Replace placeholder with actual key
         if [[ -n "$CLIPROXY_API_KEY" ]]; then
-            sed -i.bak "s/sk-your-api-key-here/$CLIPROXY_API_KEY/g" "$SCRIPT_DIR/config.yaml"
-            rm -f "$SCRIPT_DIR/config.yaml.bak"
+            # Use different sed syntax for macOS vs Linux
+            if [[ "$OS" == "macos" ]]; then
+                sed -i '' "s/sk-your-api-key-here/$CLIPROXY_API_KEY/g" "$SCRIPT_DIR/config.yaml"
+            else
+                sed -i "s/sk-your-api-key-here/$CLIPROXY_API_KEY/g" "$SCRIPT_DIR/config.yaml"
+            fi
         fi
         log "Created config.yaml from example"
     else
@@ -166,5 +297,15 @@ if [[ "$response" =~ ^[Yy]$ ]]; then
     # Source the script first
     # shellcheck disable=SC1091
     source "$SCRIPT_DIR/anticc.sh"
-    CLIProxyAPI --antigravity-login
+    # Use the detected command name
+    if [[ -n "$CLIPROXY_CMD" ]]; then
+        "$CLIPROXY_CMD" --antigravity-login
+    elif command -v cliproxyapi &>/dev/null; then
+        cliproxyapi --antigravity-login
+    elif command -v CLIProxyAPI &>/dev/null; then
+        CLIProxyAPI --antigravity-login
+    else
+        error "CLIProxyAPI command not found!"
+        exit 1
+    fi
 fi
