@@ -1,12 +1,14 @@
 package handlers
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"io"
 	"log"
 	"net/http"
 	"net/http/httputil"
+	"strings"
 
 	"cliproxy-middleware/internal/config"
 	"cliproxy-middleware/internal/schema"
@@ -114,16 +116,24 @@ func Messages(cfg *config.Config, proxy *httputil.ReverseProxy) http.HandlerFunc
 			r.ContentLength = int64(len(body))
 		}
 
-		serveProxy(w, r, proxy)
+		serveProxyWithUsage(w, r, proxy, cfg.Debug)
 	}
 }
 
 func serveProxy(w http.ResponseWriter, r *http.Request, proxy *httputil.ReverseProxy) {
-	if flusher, ok := w.(http.Flusher); ok {
-		proxy.ServeHTTP(&flushWriter{w, flusher}, r)
-	} else {
-		proxy.ServeHTTP(w, r)
+	serveProxyWithUsage(w, r, proxy, false)
+}
+
+func serveProxyWithUsage(w http.ResponseWriter, r *http.Request, proxy *httputil.ReverseProxy, debug bool) {
+	// Wrap writer to capture usage from responses
+	uw := &usageTrackingWriter{
+		ResponseWriter: w,
+		debug:          debug,
 	}
+	if flusher, ok := w.(http.Flusher); ok {
+		uw.flusher = flusher
+	}
+	proxy.ServeHTTP(uw, r)
 }
 
 type flushWriter struct {
@@ -135,4 +145,67 @@ func (fw *flushWriter) Write(p []byte) (int, error) {
 	n, err := fw.ResponseWriter.Write(p)
 	fw.flusher.Flush()
 	return n, err
+}
+
+// usageTrackingWriter wraps ResponseWriter to extract usage from API responses
+type usageTrackingWriter struct {
+	http.ResponseWriter
+	flusher     http.Flusher
+	debug       bool
+	isStreaming bool
+	headersSent bool
+}
+
+func (uw *usageTrackingWriter) WriteHeader(statusCode int) {
+	uw.headersSent = true
+	contentType := uw.Header().Get("Content-Type")
+	uw.isStreaming = strings.Contains(contentType, "text/event-stream")
+	uw.ResponseWriter.WriteHeader(statusCode)
+}
+
+func (uw *usageTrackingWriter) Write(p []byte) (int, error) {
+	// Track usage from response data
+	if uw.isStreaming {
+		// Parse SSE events for usage data
+		uw.parseStreamingUsage(p)
+	} else {
+		// For non-streaming, check if this looks like a complete response
+		TrackUsageFromResponse(p, false, uw.debug)
+	}
+
+	n, err := uw.ResponseWriter.Write(p)
+	if uw.flusher != nil {
+		uw.flusher.Flush()
+	}
+	return n, err
+}
+
+// parseStreamingUsage extracts usage from SSE events
+func (uw *usageTrackingWriter) parseStreamingUsage(data []byte) {
+	scanner := bufio.NewScanner(bytes.NewReader(data))
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, "data: ") {
+			jsonData := strings.TrimPrefix(line, "data: ")
+			if jsonData == "[DONE]" {
+				continue
+			}
+			// Look for message_delta with usage info
+			var event struct {
+				Type  string         `json:"type"`
+				Usage *AnthropicUsage `json:"usage,omitempty"`
+			}
+			if err := json.Unmarshal([]byte(jsonData), &event); err == nil {
+				if event.Usage != nil {
+					addUsage(event.Usage, uw.debug)
+				}
+			}
+		}
+	}
+}
+
+func (uw *usageTrackingWriter) Flush() {
+	if uw.flusher != nil {
+		uw.flusher.Flush()
+	}
 }
